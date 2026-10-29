@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Target Path in Repo: src/xbox/Package.appxmanifest -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap mp rescap">
+
+  <Identity
+    Name="Eglantine.NX2.Xbox"
+    Publisher="CN=EglantineDev"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <mp:PhoneIdentity PhoneProductId="a842b109-17d4-4a25-9a84-2e2e7cb41f19" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+
+  <Properties>
+    <DisplayName>Eglantine NX2 Xbox Runner</DisplayName>
+    <PublisherDisplayName>Eglantine Development Team</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Experimental Nintendo Switch 2 (NX2) loose ExeFS kernel boot runner and debug console for Xbox Developer Mode.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Xbox" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+      Executable="$targetnametoken$.exe"
+      EntryPoint="EglantineXbox.App">
+      <uap:VisualElements
+        DisplayName="Eglantine NX2 Runner"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        Description="Eglantine NX2 Xbox Runner"
+        BackgroundColor="#0A0D10">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#0A0D10" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Basic network access for NetPlay and debugging -->
+    <Capability Name="internetClient" />
+    <Capability Name="internetClientServer" />
+    <Capability Name="privateNetworkClientServer" />
+
+    <!-- CRITICAL FOR EMULATION: Allows dynamic JIT code generation (dynarmic ARM64 recompiler) -->
+    <rescap:Capability Name="codeGeneration" />
+
+    <!-- Broad file system access for external USB drives connected to the Xbox -->
+    <rescap:Capability Name="broadFileSystemAccess" />
+  </Capabilities>
+</Package>
