@@ -757,7 +757,7 @@ private:
             m_stats.fence_us += to_us(waited - entered);
             m_stats.composite_us += to_us(composited - waited);
             m_stats.pace_us += to_us(paced - composited);
-            m_stats.max_fence_us = (std::max)(m_stats.max_fence_us, to_us(waited - entered));
+            m_stats.max_fence_us = (std::max<long long>)(m_stats.max_fence_us, static_cast<long long>(to_us(waited - entered)));
             if (m_stats.last_present != std::chrono::steady_clock::time_point{}) {
                 const long long frame = to_us(entered - m_stats.last_present);
                 m_stats.frame_us += frame;
