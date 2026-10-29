@@ -61,7 +61,7 @@
      <item>
       <layout class="QVBoxLayout" name="verticalLayout">
        <item>
-                  <pixmap resource="../../dist/qt_themes/default/default.qrc">:/icons/default/256x256/eglantine.png</pixmap>
+        <widget class="QLabel" name="labelYuzu">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
            <horstretch>0</horstretch>
