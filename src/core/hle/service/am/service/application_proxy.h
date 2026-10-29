@@ -17,9 +17,7 @@ class IApplicationFunctions;
 class ICommonStateGetter;
 class IDebugFunctions;
 class IDisplayController;
-class IGraphicsScalingParametersFunctions;
 class ILibraryAppletCreator;
-class IPerformanceFunctions;
 class IProcessWindingController;
 class ISelfController;
 class IWindowController;
@@ -44,10 +42,6 @@ private:
         Out<SharedPointer<ILibraryAppletCreator>> out_library_applet_creator);
     Result GetApplicationFunctions(
         Out<SharedPointer<IApplicationFunctions>> out_application_functions);
-
-    Result GetPerformanceFunctions(Out<SharedPointer<IPerformanceFunctions>> out_functions);
-    Result GetGraphicsScalingParametersFunctions(
-        Out<SharedPointer<IGraphicsScalingParametersFunctions>> out_functions);
 
 private:
     WindowSystem& m_window_system;
