@@ -60,6 +60,17 @@ jobs:
         if: matrix.platform == 'windows-x86_64'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install Qt on Windows
+        if: matrix.platform == 'windows-x86_64'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtcharts
+          cache: true
+
       - name: Install Vulkan SDK on Windows
         if: matrix.platform == 'windows-x86_64'
         shell: pwsh
@@ -90,6 +101,7 @@ jobs:
           -DYUZU_ROOM=OFF
           -DYUZU_ROOM_STANDALONE=OFF
           -DYUZU_USE_BUNDLED_QT=OFF
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
           -DYUZU_USE_BUNDLED_SDL3=ON
           -DVulkanHeaders_FORCE_BUNDLED=ON
           -DVulkanUtilityLibraries_FORCE_BUNDLED=ON
@@ -107,7 +119,7 @@ jobs:
           -DYUZU_CMD=ON
           -DYUZU_ROOM=OFF
           -DYUZU_ROOM_STANDALONE=OFF
-          -DYUZU_USE_BUNDLED_QT=ON
+          -DYUZU_USE_BUNDLED_QT=OFF
           -DYUZU_USE_BUNDLED_SDL3=ON
           -DENABLE_UPDATE_CHECKER=OFF
           -DUSE_DISCORD_PRESENCE=OFF
@@ -130,7 +142,8 @@ jobs:
           if (-not (Test-Path build/release/bin/eglantine.exe)) {
             throw 'build/release/bin/eglantine.exe was not produced'
           }
-          Compress-Archive -Path build/release/bin/eglantine.exe -DestinationPath "eglantine-${env:GITHUB_SHA}-windows-x86_64.zip"
+          windeployqt --release --no-translations build/release/bin/eglantine.exe
+          Compress-Archive -Path build/release/bin/* -DestinationPath "eglantine-${env:GITHUB_SHA}-windows-x86_64.zip"
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
