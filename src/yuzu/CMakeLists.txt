@@ -239,7 +239,7 @@ add_executable(yuzu
     game/carousel.h game/carousel.cpp
 )
 
-set_target_properties(yuzu PROPERTIES OUTPUT_NAME "eden")
+set_target_properties(yuzu PROPERTIES OUTPUT_NAME "eglantine")
 
 if (YUZU_CRASH_DUMPS)
     target_sources(yuzu PRIVATE
@@ -361,17 +361,17 @@ if (APPLE)
     # Xcode will automatically generate the Assets.car and icns file for us.
     set(_dist "${CMAKE_SOURCE_DIR}/dist")
     if (CMAKE_GENERATOR MATCHES "Xcode")
-        set(_icons "${_dist}/eden.icon")
+        set(_icons "${_dist}/eglantine.icon")
 
         set_target_properties(eden PROPERTIES
-            XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME eden
-            MACOSX_BUNDLE_ICON_FILE eden
+            XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME eglantine
+            MACOSX_BUNDLE_ICON_FILE eglantine
             # Also force xcode to manage signing for us.
             XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED ON
             XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED ON)
     # Otherwise, we'll use our own.
     else()
-        set(_icons "${_dist}/eden.icns" "${_dist}/Assets.car")
+        set(_icons "${_dist}/eglantine.icns" "${_dist}/Assets.car")
     endif()
 
     set_source_files_properties(${_icons} PROPERTIES
@@ -433,7 +433,7 @@ endif()
 
 if (WIN32 AND NOT YUZU_USE_BUNDLED_QT)
     set(YUZU_EXE_DIR "$<TARGET_FILE_DIR:yuzu>")
-    add_custom_command(TARGET yuzu POST_BUILD COMMAND ${WINDEPLOYQT_EXECUTABLE} "${YUZU_EXE_DIR}/eden.exe" --dir "${YUZU_EXE_DIR}" --libdir "${YUZU_EXE_DIR}" --plugindir "${YUZU_EXE_DIR}/plugins" --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --no-translations --verbose 0)
+    add_custom_command(TARGET yuzu POST_BUILD COMMAND ${WINDEPLOYQT_EXECUTABLE} "${YUZU_EXE_DIR}/eglantine.exe" --dir "${YUZU_EXE_DIR}" --libdir "${YUZU_EXE_DIR}" --plugindir "${YUZU_EXE_DIR}/plugins" --no-compiler-runtime --no-opengl-sw --no-system-d3d-compiler --no-translations --verbose 0)
 endif()
 
 if (ARCHITECTURE_x86_64 OR ARCHITECTURE_arm64)
