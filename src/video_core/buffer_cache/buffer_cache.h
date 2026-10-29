@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <memory>
 #include <numeric>
+#include <stdexcept>
+#include <vector>
+#include <fmt/ranges.h>
 
 #include "common/range_sets.inc"
 #include "video_core/buffer_cache/buffer_cache_base.h"
@@ -78,6 +81,20 @@ void BufferCache<P>::TickFrame() {
         return;
     }
     runtime.TickFrame(slot_buffers);
+    if (static u64 frames{}; ++frames % 600 == 0) {
+        u64 total{};
+        size_t count{};
+        std::vector<std::pair<u64, VAddr>> largest;
+        for (const auto [buffer_id, buffer] : slot_buffers) {
+            total += buffer->SizeBytes();
+            ++count;
+            largest.emplace_back(buffer->SizeBytes(), buffer->CpuAddr());
+        }
+        std::partial_sort(largest.begin(), largest.begin() + std::min<size_t>(6, largest.size()),
+                          largest.end(), std::greater<>{});
+        LOG_INFO(HW_GPU, "Buffer cache: {} buffers {} MiB; largest {}", count, total >> 20,
+                 fmt::join(largest.begin(), largest.begin() + std::min<size_t>(6, largest.size()), ", "));
+    }
 
     // Calculate hits and shots and move hit bits to the right
     const u32 hits = std::reduce(channel_state->uniform_cache_hits.begin(),
@@ -1194,8 +1211,15 @@ void BufferCache<P>::BindHostComputeUniformBuffers() {
                 return alignment > 1 && (offset % alignment) != 0;
             }
         }();
+        // Small buffers the GPU has not written are streamed, as graphics ones are: synchronizing
+        // them made every dispatch re-protect pages an inline upload had just unprotected (two
+        // VirtualProtect calls per dispatch, ~4,000 dispatches a second in title 1).
+        const bool use_fast_buffer =
+            needs_alignment_stream ||
+            (has_host_buffer && size <= channel_state->uniform_buffer_skip_cache_size &&
+             !memory_tracker.IsRegionGpuModified(binding.device_addr, size));
         if constexpr (!IS_OPENGL) {
-            if (needs_alignment_stream) {
+            if (use_fast_buffer) {
                 const std::span<u8> span =
                     runtime.BindMappedUniformBuffer(0, binding_index, size);
                 device_memory.ReadBlockUnsafe(binding.device_addr, span.data(), size);
@@ -1372,7 +1396,12 @@ void BufferCache<P>::UpdateVertexBuffer(u32 index) {
     const auto& array = maxwell3d->regs.vertex_streams[index];
     const auto& limit = maxwell3d->regs.vertex_stream_limits[index];
     const GPUVAddr gpu_addr_begin = array.Address();
-    const GPUVAddr gpu_addr_end = limit.Address() + 1;
+    const bool native = maxwell3d->GetNativeMacroEngine().native_turing;
+    const u64 native_size = native ? maxwell3d->regs.NativeVertexStreamSize(index) : 0;
+    if (native && array.enable != 0 && native_size > (std::numeric_limits<u32>::max)()) {
+        throw std::runtime_error("Native vertex stream exceeds supported 32-bit buffer size");
+    }
+    const GPUVAddr gpu_addr_end = native ? gpu_addr_begin + native_size : limit.Address() + 1;
     const std::optional<DAddr> device_addr = gpu_memory->GpuToCpuAddress(gpu_addr_begin);
     const u32 address_size = static_cast<u32>(gpu_addr_end - gpu_addr_begin);
     u32 size = address_size; // TODO: Analyze stride and number of vertices

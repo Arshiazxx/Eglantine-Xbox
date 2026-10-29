@@ -118,7 +118,8 @@ IApplicationFunctions::IApplicationFunctions(Core::System& system_, std::shared_
         {220, nullptr, "Unknown220"}, // [20.0.0+]
         {300, nullptr, "CreateMovieWriter"}, // [19.0.0+]
         {310, nullptr, "Unknown310"}, // [20.0.0+]
-        {320, nullptr, "Unknown320"}, // [20.0.0+]
+        {320, D<&IApplicationFunctions::Unknown320>, "Unknown320"}, // [20.0.0+]
+        {321, D<&IApplicationFunctions::Unknown321>, "Unknown321"}, // Switch 2
         {330, D<&IApplicationFunctions::Unknown330>, "Unknown330"}, // [20.0.0+]
         {500, nullptr, "StartContinuousRecordingFlushForDebug"},
         {1000, nullptr, "CreateMovieMaker"},
@@ -352,10 +353,11 @@ Result IApplicationFunctions::GetPseudoDeviceId(Out<Common::UUID> out_pseudo_dev
     // This should be hashed with the device specific hash
     // for now this will do
     const auto res = FileSys::PatchManager::GetMetadataFromBaseOrUpdate(system, m_applet->program_id);
-    R_UNLESS(res.first != nullptr, ResultUnknown);
     std::array<u8, EVP_MAX_MD_SIZE> hash;
     unsigned int hash_len = 0;
-    auto const seed = res.first->raw.seed_for_pseudo_device_id;
+    // Loose ExeFS boots have no control.nacp; seed from the program id instead of failing.
+    auto const seed = res.first != nullptr ? res.first->raw.seed_for_pseudo_device_id
+                                           : m_applet->program_id;
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     auto const algorithm = EVP_sha1();
     EVP_DigestInit_ex(ctx, algorithm, nullptr);
@@ -541,6 +543,18 @@ Result IApplicationFunctions::GetUnknownEvent210(
     OutCopyHandle<Kernel::KReadableEvent> out_event) {
     LOG_DEBUG(Service_AM, "called");
     *out_event = m_applet->unknown_event.GetHandle();
+    R_SUCCEED();
+}
+
+Result IApplicationFunctions::Unknown320() {
+    // Called by Switch 2 titles during nn::oe::Initialize; arguments unknown.
+    LOG_WARNING(Service_AM, "(STUBBED) called");
+    R_SUCCEED();
+}
+
+Result IApplicationFunctions::Unknown321() {
+    // Called by Switch 2 titles right after 320; arguments unknown.
+    LOG_WARNING(Service_AM, "(STUBBED) called");
     R_SUCCEED();
 }
 

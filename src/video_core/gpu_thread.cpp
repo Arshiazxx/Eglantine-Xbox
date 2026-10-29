@@ -4,6 +4,9 @@
 // SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
+#include <thread>
+
 #include "common/assert.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
@@ -14,6 +17,7 @@
 #include "video_core/dma_pusher.h"
 #include "video_core/gpu.h"
 #include "video_core/gpu_thread.h"
+#include "video_core/nx2_profile.h"
 #include "video_core/host1x/host1x.h"
 #include "video_core/renderer_base.h"
 
@@ -35,18 +39,52 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
 
         auto current_context = context.Acquire();
         CommandDataContainer next;
+        // When a pending channel last moved or a command arrived (see the polling below).
+        auto last_progress = std::chrono::steady_clock::now();
+        namespace Profile = VideoCommon::Nx2Profile;
         while (!stop_token.stop_requested()) {
-            state.queue.PopWait(next, stop_token);
+            Profile::Report();
+            if (scheduler.HasPendingChannels()) {
+                // Suspended channels wait on semaphores the CPU releases: poll them meanwhile.
+                {
+                    Profile::Scope scope{Profile::Zone::ResumePending};
+                    scheduler.ResumePending(system.GPU());
+                }
+                if (!state.queue.TryPop(next)) {
+                    // The CPU usually releases the semaphore soon after: poll for half a
+                    // millisecond before sleeping, or every wait also waits out a host sleep
+                    // (title 1 waits ~25 times a second).
+                    Profile::Scope scope{Profile::Zone::PendingSleep};
+                    if (std::chrono::steady_clock::now() - last_progress <
+                        std::chrono::microseconds{500}) {
+                        std::this_thread::yield();
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+                    }
+                    continue;
+                }
+            } else {
+                Profile::Scope scope{Profile::Zone::Idle};
+                state.queue.PopWait(next, stop_token);
+            }
             if (stop_token.stop_requested()) {
                 break;
             }
+            last_progress = std::chrono::steady_clock::now();
             if (auto* submit_list = std::get_if<SubmitListCommand>(&next.data)) {
+                Profile::Scope scope{Profile::Zone::Push};
                 scheduler.Push(system.GPU(), submit_list->channel, std::move(submit_list->entries));
             } else if (std::holds_alternative<GPUTickCommand>(next.data)) {
+                Profile::Scope scope{Profile::Zone::Tick};
                 system.GPU().TickWork();
+            } else if (auto* run = std::get_if<RunCommand>(&next.data)) {
+                Profile::Scope scope{Profile::Zone::Run};
+                run->func();
             } else if (const auto* flush = std::get_if<FlushRegionCommand>(&next.data)) {
+                Profile::Scope scope{Profile::Zone::FlushInvalidate};
                 renderer.ReadRasterizer()->FlushRegion(flush->addr, flush->size);
             } else if (const auto* invalidate = std::get_if<InvalidateRegionCommand>(&next.data)) {
+                Profile::Scope scope{Profile::Zone::FlushInvalidate};
                 renderer.ReadRasterizer()->OnCacheInvalidation(invalidate->addr, invalidate->size);
             } else {
                 ASSERT(false);
@@ -75,6 +113,10 @@ void ThreadManager::FlushRegion(DAddr addr, u64 size, bool is_async) {
 
 void ThreadManager::TickGPU(bool is_async) {
     PushCommand(GPUTickCommand(), false, is_async);
+}
+
+void ThreadManager::Run(std::function<void()>&& func, bool is_async) {
+    PushCommand(RunCommand{std::move(func)}, false, is_async);
 }
 
 void ThreadManager::InvalidateRegion(DAddr addr, u64 size) {

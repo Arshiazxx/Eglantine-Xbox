@@ -4,6 +4,14 @@
 // SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/scope_exit.h"
+#include <vector>
+#include <tuple>
+#include <mutex>
+#include <map>
+#include <chrono>
+#include <algorithm>
+#include <cstdlib>
 #include <fmt/ranges.h>
 #include "common/assert.h"
 #include "common/logging.h"
@@ -13,6 +21,7 @@
 #include "core/hle/kernel/kernel.h"
 #include "core/hle/service/ipc_helpers.h"
 #include "core/hle/service/service.h"
+#include "core/hle/service/nx2_stub_interface.h"
 #include "core/hle/service/sm/sm.h"
 #include "core/reporter.h"
 
@@ -63,13 +72,18 @@ void ServiceFrameworkBase::ReportUnimplementedFunction(HLERequestContext& ctx,
 
     fmt::memory_buffer buf;
     fmt::format_to(std::back_inserter(buf), "function '{}({})': port='{}' cmd_buf={{[0]={:#x}", ctx.GetCommand(), function_name, service_name, cmd_buf[0]);
-    for (int i = 1; i <= 8; ++i)
+    // The Switch 2 video decoder sessions are being reverse engineered: dump whole requests.
+    const int last_word = std::string_view{service_name}.starts_with("nx2:vdec") ? 47 : 8;
+    for (int i = 1; i <= last_word; ++i)
         fmt::format_to(std::back_inserter(buf), ", [{}]={:#x}", i, cmd_buf[i]);
     buf.push_back('}');
 
     system.GetReporter().SaveUnimplementedFunctionReport(ctx, ctx.GetCommand(), function_name, service_name);
     UNIMPLEMENTED_MSG("Unknown / unimplemented {}", fmt::to_string(buf));
-    if (Settings::values.use_auto_stub) {
+    // EDEN_NX2_AUTO_STUB=1 auto-stubs every unknown command without touching the config.
+    static const bool env_auto_stub = std::getenv("EDEN_NX2_AUTO_STUB") != nullptr;
+    if (Settings::values.use_auto_stub || env_auto_stub ||
+        std::string_view{service_name}.starts_with(Nx2StubPrefix)) {
         LOG_WARNING(Service, "Using auto stub fallback!");
         IPC::ResponseBuilder rb{ctx, 2};
         rb.Push(ResultSuccess);
@@ -83,7 +97,25 @@ void ServiceFrameworkBase::InvokeRequest(HLERequestContext& ctx) {
         return ReportUnimplementedFunction(ctx, info);
 
     LOG_TRACE(Service, "{}", MakeFunctionString(info->name, GetServiceName(), ctx.CommandBuffer()));
+    // EDEN_NX2_IPC_TRACE=1 logs every dispatched command and the result word it returned.
+    static const bool ipc_trace = std::getenv("EDEN_NX2_IPC_TRACE") != nullptr;
+    if (ipc_trace) {
+        LOG_INFO(Service, "ipc {}::{} ({})", service_name, ctx.GetCommand(), info->name);
+    }
     handler_invoker(this, info->handler_callback, ctx);
+    if (ipc_trace) {
+        // Response layout: [0..1] header, then 'SFCO', version, result.
+        const auto* cmd_buf = ctx.CommandBuffer();
+        for (int i = 0; i < 12; ++i) {
+            if (cmd_buf[i] == 0x4F434653) {  // "SFCO"
+                if (cmd_buf[i + 2] != 0) {
+                    LOG_INFO(Service, "ipc {}::{} -> result {:#x}", service_name, ctx.GetCommand(),
+                             cmd_buf[i + 2]);
+                }
+                break;
+            }
+        }
+    }
 }
 
 void ServiceFrameworkBase::InvokeRequestTipc(HLERequestContext& ctx) {
@@ -93,12 +125,68 @@ void ServiceFrameworkBase::InvokeRequestTipc(HLERequestContext& ctx) {
         return ReportUnimplementedFunction(ctx, info);
 
     LOG_TRACE(Service, "{}", MakeFunctionString(info->name, GetServiceName(), ctx.CommandBuffer()));
+    static const bool ipc_trace = std::getenv("EDEN_NX2_IPC_TRACE") != nullptr;
+    if (ipc_trace) {
+        const auto* w = ctx.CommandBuffer();
+        LOG_INFO(Service, "tipc {}::{} ({}) [2]={:#x} [3]={:#x} [4]={:#x}", service_name,
+                 ctx.GetCommand(), info->name, w[2], w[3], w[4]);
+    }
     handler_invoker(this, info->handler_callback, ctx);
 }
+
+namespace {
+// EDEN_NX2_IPC_SUMMARY: every 5 s, log how often each service command ran and with which result
+// since the last summary (finds a game polling something that never becomes ready).
+void CountRequest(const std::string& service, u32 command, u32 type, u32 result) {
+    static const bool enabled = std::getenv("EDEN_NX2_IPC_SUMMARY") != nullptr;
+    if (!enabled) {
+        return;
+    }
+    static std::mutex mutex;
+    static std::map<std::tuple<std::string, u32, u32, u32>, u32> counts;
+    static auto last = std::chrono::steady_clock::now();
+    std::scoped_lock lock{mutex};
+    ++counts[{service, command, type, result}];
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last < std::chrono::seconds{5}) {
+        return;
+    }
+    last = now;
+    std::vector<std::pair<u32, std::string>> lines;
+    for (const auto& [key, count] : counts) {
+        lines.emplace_back(count, fmt::format("{}::{}{} -> {:#x}", std::get<0>(key), std::get<1>(key),
+                                              std::get<2>(key) >= 16 ? " (tipc)" : "",
+                                              std::get<3>(key)));
+    }
+    std::sort(lines.begin(), lines.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::string text;
+    for (size_t i = 0; i < std::min<size_t>(lines.size(), 24); ++i) {
+        text += fmt::format(" | {}x {}", lines[i].first, lines[i].second);
+    }
+    LOG_INFO(Service, "ipc summary ({} kinds){}", lines.size(), text);
+    counts.clear();
+}
+} // Anonymous namespace
 
 Result ServiceFrameworkBase::HandleSyncRequest(Kernel::KServerSession& session,
                                                HLERequestContext& ctx) {
     const auto guard = LockService();
+    SCOPE_EXIT {
+        const auto* cmd_buf = ctx.CommandBuffer();
+        u32 result_word = 0;
+        const u32 type = static_cast<u32>(ctx.GetCommandType());
+        if (type >= 16) {
+            result_word = cmd_buf[2];
+        } else {
+            for (int i = 0; i < 12; ++i) {
+                if (cmd_buf[i] == 0x4F434653) { // "SFCO"
+                    result_word = cmd_buf[i + 2];
+                    break;
+                }
+            }
+        }
+        CountRequest(service_name, ctx.GetCommand(), type, result_word);
+    };
 
     Result result = ResultSuccess;
 

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <optional>
 #include <vector>
@@ -15,6 +16,8 @@
 #include "common/common_types.h"
 #include "video_core/engines/engine_interface.h"
 #include "video_core/engines/engine_upload.h"
+#include "video_core/macro.h"
+#include "video_core/native_qmd.h"
 #include "video_core/textures/texture.h"
 
 namespace Core {
@@ -30,6 +33,9 @@ class RasterizerInterface;
 }
 
 namespace Tegra::Engines {
+
+/// Draws left to trace after an upscale fallback (debug aid).
+extern std::atomic<u32> g_nx2_trace_draws_after_upscale;
 
 /**
  * This Engine is known as GK104_Compute. Documentation can be found in:
@@ -50,6 +56,24 @@ public:
 
     /// Binds a rasterizer to this engine.
     void BindRasterizer(VideoCore::RasterizerInterface* rasterizer);
+
+    /// The channel's MME data RAM, shared with its 3D engine.
+    void SetNativeDataRam(std::array<u32, 0xc00>* data_ram) { native_data_ram = data_ram; }
+    void SetNativeMacroMode(MacroEngine* shared_macro, std::span<u32> positions, NativeMacroContext* context = nullptr) {
+        if (native_context != context) native_compute_uploaded = false;
+        native_context = context;
+        native_mode = shared_macro != nullptr;
+        upload_state.SetNativePartialTransfers(native_mode);
+        native_macro = shared_macro;
+        native_macro_positions = positions;
+        if (native_mode) execution_mask.set();
+        else {
+            execution_mask.reset();
+            execution_mask[KEPLER_COMPUTE_REG_INDEX(exec_upload)] = true;
+            execution_mask[KEPLER_COMPUTE_REG_INDEX(data_upload)] = true;
+            execution_mask[KEPLER_COMPUTE_REG_INDEX(launch)] = true;
+        }
+    }
 
     static constexpr std::size_t NumConstBuffers = 8;
 
@@ -211,7 +235,29 @@ public:
         return indirect_compute;
     }
 
+    bool IsNativeMode() const { return native_mode; }
+
 private:
+    bool DispatchNativeCompute(const NativeQmdScheduler::Descriptor& descriptor);
+    void ProcessNativeReportSemaphore(u32 argument);
+    void DescribeNativeResources(const NativeQmdScheduler::Descriptor& qmd);
+    bool UpscaleInsteadOfNativeProgram();
+    bool ProcessNativeMethod(Core::System& system, u32 method, u32 argument, bool is_last_call);
+    NativeQmdScheduler native_qmd;
+    std::array<u32, 0xc00>* native_data_ram{};
+    bool native_mme_dumped{};
+    std::optional<u32> native_executing_macro_logged;
+    bool native_mode{};
+    NativeMacroContext* native_context{};
+    bool native_compute_uploaded{};
+    MacroEngine* native_macro{};
+    std::array<u32, 0x1000> native_registers{};
+    std::span<u32> native_macro_positions;
+    std::vector<u32> native_parameters;
+    std::vector<u32> native_memo_parameters; ///< The current call's parameters, for the memo
+    std::optional<u32> native_executing_macro;
+    u32 native_bind_pointer{};
+
     void ProcessLaunch();
 
     void ConsumeSinkImpl(Core::System& system) override;

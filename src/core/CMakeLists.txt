@@ -457,6 +457,7 @@ add_library(core STATIC
     hle/service/am/service/application_functions.cpp
     hle/service/am/service/application_functions.h
     hle/service/am/service/application_proxy.cpp
+    hle/service/am/service/graphics_scale_controller.h
     hle/service/am/service/application_proxy.h
     hle/service/am/service/application_proxy_service.cpp
     hle/service/am/service/application_proxy_service.h
@@ -526,6 +527,7 @@ add_library(core STATIC
     hle/service/audio/audio_out.h
     hle/service/audio/audio_renderer_manager.cpp
     hle/service/audio/audio_renderer_manager.h
+    hle/service/audio/nx2_audio_user_client.h
     hle/service/audio/audio_renderer.cpp
     hle/service/audio/audio_renderer.h
     hle/service/audio/audio.cpp
@@ -865,6 +867,7 @@ add_library(core STATIC
     hle/service/nvdrv/devices/nvhost_vic.h
     hle/service/nvdrv/devices/nvmap.cpp
     hle/service/nvdrv/devices/nvmap.h
+    hle/service/nvdrv/devices/nx2_stub_device.h
     hle/service/nvdrv/nvdata.h
     hle/service/nvdrv/nvdrv.cpp
     hle/service/nvdrv/nvdrv.h
@@ -1033,6 +1036,8 @@ add_library(core STATIC
     hle/service/server_manager.h
     hle/service/service.cpp
     hle/service/service.h
+    hle/service/nx2_stub_interface.h
+    hle/service/nx2_gsv.h
     hle/service/services.cpp
     hle/service/services.h
     hle/service/set/factory_settings_server.cpp
